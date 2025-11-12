@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sensitive Data - Credentials & Encryption
+.env
+config/credentials.py
+credentials.json
+credentials.enc
+fernet_key.json
+config/credentials.enc
+
+# Logs
+logs/
+*.log
+
+# Data Files
+data/live/*.json
+data/historical/*.csv
+
+# Keep directory structure but ignore contents
+!data/live/.gitkeep
+!data/historical/.gitkeep
+!logs/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Test coverage
+.coverage
+htmlcov/
+
+# Temporary files
+*.tmp
+*.bak
+tempCodeRunnerFile.py

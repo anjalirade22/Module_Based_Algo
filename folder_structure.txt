@@ -1,0 +1,35 @@
+Module_Based_Algo/
+├── main.py                      # Entry point - orchestrates all modules
+├── config/
+│   ├── __init__.py
+│   ├── settings.py              # Global settings & parameters
+│   └── credentials.py           # API credentials (gitignored)
+├── modules/
+│   ├── __init__.py
+│   ├── logger_module.py         # ✓ Your existing logging setup
+│   ├── api_module.py            # Broker API login & authentication
+│   ├── data_module.py           # Live (JSON) & Historical (CSV) data
+│   ├── strategy_module.py       # Swing level calculation & signals
+│   ├── rms_module.py            # Risk Management & Stop losses
+│   └── execution_module.py      # Order placement & management
+├── data/
+│   ├── live/                    # JSON files for live data
+│   └── historical/              # CSV files for historical data
+├── logs/                        # ✓ Your log files (auto-created)
+├── strategies/
+│   ├── __init__.py
+│   ├── base_strategy.py         # Abstract base class
+│   └── swing_strategy.py        # Your specific swing strategy
+├── utils/
+│   ├── __init__.py
+│   ├── validators.py            # Data validation utilities
+│   └── helpers.py               # Common helper functions
+├── tests/
+│   ├── __init__.py
+│   ├── test_api.py
+│   ├── test_data.py
+│   ├── test_strategy.py
+│   ├── test_rms.py
+│   └── test_execution.py
+├── requirements.txt             # Python dependencies
+└── .env                         # Environment variables (gitignored)
