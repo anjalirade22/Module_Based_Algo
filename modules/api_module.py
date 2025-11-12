@@ -11,7 +11,10 @@ Currently implemented for Angel One SmartAPI.
 """
 import time
 import json
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from SmartApi import SmartConnect
 from datetime import datetime, timedelta
 
 from config import config
@@ -23,13 +26,13 @@ class BrokerAPI:
 
     def __init__(self):
         """Initialize the broker API client."""
-        self.client = None
-        self.feed_token = None
-        self.jwt_token = None
+        self.client: Optional['SmartConnect'] = None
+        self.feed_token: Optional[str] = None
+        self.jwt_token: Optional[str] = None
         self.websocket = None
         self.is_connected = False
-        self.last_auth_time = None
-        self.session_expiry = None
+        self.last_auth_time: Optional[datetime] = None
+        self.session_expiry: Optional[datetime] = None
 
         # Initialize logger
         self.logger = logger
@@ -41,18 +44,18 @@ class BrokerAPI:
             bool: True if authentication successful, False otherwise
         """
         try:
-            self.logger.info("🔐 Attempting broker authentication...")
+            self.logger.info("Attempting broker authentication...")
 
             # Check if we have required credentials
             if not all([config.API_KEY, config.USERNAME, config.PIN, config.TOTP_TOKEN]):
-                self.logger.error("❌ Missing required credentials for authentication")
+                self.logger.error("Missing required credentials for authentication")
                 return False
 
             # Import SmartAPI (this would need to be installed)
             try:
                 from SmartApi import SmartConnect
             except ImportError:
-                self.logger.error("❌ SmartApi package not installed. Install with: pip install smartapi-python")
+                self.logger.error("SmartApi package not installed. Install with: pip install smartapi-python")
                 return False
 
             # Initialize SmartConnect client
@@ -68,25 +71,30 @@ class BrokerAPI:
                 totp_token
             )
 
+            # Validate response is a dictionary
+            if not isinstance(login_data, dict):
+                self.logger.error("Invalid response format from authentication API")
+                return False
+
             if login_data.get('status') and login_data.get('data'):
                 self.jwt_token = login_data['data'].get('jwtToken')
                 self.feed_token = login_data['data'].get('feedToken')
                 self.last_auth_time = datetime.now()
                 self.session_expiry = self.last_auth_time + timedelta(hours=24)  # Sessions typically last 24 hours
 
-                self.logger.info("✅ Broker authentication successful")
-                config.SMART_API_OBJ = self.client
+                self.logger.info("Broker authentication successful")
+                config.SMART_API_OBJ = self.client  # type: ignore
                 config.JWT_TOKEN = self.jwt_token
                 config.FEED_TOKEN = self.feed_token
 
                 return True
             else:
                 error_msg = login_data.get('message', 'Unknown authentication error')
-                self.logger.error(f"❌ Authentication failed: {error_msg}")
+                self.logger.error(f"Authentication failed: {error_msg}")
                 return False
 
         except Exception as e:
-            self.logger.error(f"❌ Authentication error: {str(e)}")
+            self.logger.error(f"Authentication error: {str(e)}")
             return False
 
     def _generate_totp(self) -> str:
@@ -100,7 +108,7 @@ class BrokerAPI:
             totp = pyotp.TOTP(config.TOTP_TOKEN)
             return totp.now()
         except ImportError:
-            self.logger.warning("⚠️  pyotp not installed, using TOTP_TOKEN directly")
+            self.logger.warning("pyotp not installed, using TOTP_TOKEN directly")
             return config.TOTP_TOKEN
 
     def is_authenticated(self) -> bool:
@@ -114,7 +122,7 @@ class BrokerAPI:
 
         # Check if session has expired
         if self.session_expiry and datetime.now() > self.session_expiry:
-            self.logger.warning("⚠️  Session expired, need re-authentication")
+            self.logger.warning("Session expired, need re-authentication")
             return False
 
         return True
@@ -144,12 +152,20 @@ class BrokerAPI:
             if not self.renew_session():
                 return None
 
+            # Ensure client is authenticated
+            if self.client is None:
+                self.logger.error("API client not initialized")
+                return None
+
+            # Type assertion for type checker
+            assert self.client is not None
+
             # Validate required parameters
             required_params = ['tradingsymbol', 'symboltoken', 'transactiontype', 'ordertype', 'producttype', 'quantity']
             missing_params = [param for param in required_params if param not in order_params]
 
             if missing_params:
-                self.logger.error(f"❌ Missing required order parameters: {missing_params}")
+                self.logger.error(f"Missing required order parameters: {missing_params}")
                 return None
 
             # Set default values if not provided
@@ -158,22 +174,27 @@ class BrokerAPI:
             order_params.setdefault('price', 0)
             order_params.setdefault('triggerprice', 0)
 
-            self.logger.info(f"📝 Placing order: {order_params}")
+            self.logger.info(f"Placing order: {order_params}")
 
             # Place the order
             order_response = self.client.placeOrder(order_params)
 
+            # Ensure response is a dict before accessing keys
+            if not isinstance(order_response, dict):
+                self.logger.error(f"Unexpected response type for order placement: expected dict, got {type(order_response)}")
+                return None
+
             if order_response.get('status') and order_response.get('data'):
                 order_id = order_response['data'].get('orderid')
-                self.logger.info(f"✅ Order placed successfully. Order ID: {order_id}")
+                self.logger.info(f"Order placed successfully. Order ID: {order_id}")
                 return order_response['data']
             else:
                 error_msg = order_response.get('message', 'Unknown order placement error')
-                self.logger.error(f"❌ Order placement failed: {error_msg}")
+                self.logger.error(f"Order placement failed: {error_msg}")
                 return None
 
         except Exception as e:
-            self.logger.error(f"❌ Order placement error: {str(e)}")
+            self.logger.error(f"Order placement error: {str(e)}")
             return None
 
     def modify_order(self, order_id: str, modify_params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -192,20 +213,25 @@ class BrokerAPI:
 
             modify_params['orderid'] = order_id
 
-            self.logger.info(f"📝 Modifying order {order_id}: {modify_params}")
+            self.logger.info(f"Modifying order {order_id}: {modify_params}")
 
-            response = self.client.modifyOrder(modify_params)
+            response = self.client.modifyOrder(modify_params)  # type: ignore
+
+            # Ensure response is a dict before accessing keys
+            if not isinstance(response, dict):
+                self.logger.error(f"Unexpected response type for order modification: expected dict, got {type(response)}")
+                return None
 
             if response.get('status') and response.get('data'):
-                self.logger.info(f"✅ Order {order_id} modified successfully")
+                self.logger.info(f"Order {order_id} modified successfully")
                 return response['data']
             else:
                 error_msg = response.get('message', 'Unknown order modification error')
-                self.logger.error(f"❌ Order modification failed: {error_msg}")
+                self.logger.error(f"Order modification failed: {error_msg}")
                 return None
 
         except Exception as e:
-            self.logger.error(f"❌ Order modification error: {str(e)}")
+            self.logger.error(f"Order modification error: {str(e)}")
             return None
 
     def cancel_order(self, order_id: str) -> bool:
@@ -221,20 +247,25 @@ class BrokerAPI:
             if not self.renew_session():
                 return False
 
-            self.logger.info(f"❌ Cancelling order {order_id}")
+            self.logger.info(f"Cancelling order {order_id}")
 
-            response = self.client.cancelOrder(order_id, "NORMAL")
+            response = self.client.cancelOrder(order_id=order_id, variety="NORMAL")  # type: ignore
 
-            if response.get('status'):
-                self.logger.info(f"✅ Order {order_id} cancelled successfully")
+            # Ensure response is a dict before accessing keys
+            if not isinstance(response, dict):
+                self.logger.error(f"Unexpected response type for order cancellation: expected dict, got {type(response)}")
+                return False
+
+            if response.get('status') and response.get('data'):
+                self.logger.info(f"Order {order_id} cancelled successfully")
                 return True
             else:
                 error_msg = response.get('message', 'Unknown order cancellation error')
-                self.logger.error(f"❌ Order cancellation failed: {error_msg}")
+                self.logger.error(f"Order cancellation failed: {error_msg}")
                 return False
 
         except Exception as e:
-            self.logger.error(f"❌ Order cancellation error: {str(e)}")
+            self.logger.error(f"Order cancellation error: {str(e)}")
             return False
 
     def get_order_book(self) -> Optional[List[Dict[str, Any]]]:
@@ -247,17 +278,22 @@ class BrokerAPI:
             if not self.renew_session():
                 return None
 
-            response = self.client.orderBook()
+            response = self.client.orderBook()  # type: ignore
+
+            # Ensure response is a dict before accessing keys
+            if not isinstance(response, dict):
+                self.logger.error(f"Unexpected response type for order book: expected dict, got {type(response)}")
+                return None
 
             if response.get('status') and response.get('data'):
                 return response['data']
             else:
                 error_msg = response.get('message', 'Unknown error fetching order book')
-                self.logger.error(f"❌ Failed to fetch order book: {error_msg}")
+                self.logger.error(f"Failed to fetch order book: {error_msg}")
                 return None
 
         except Exception as e:
-            self.logger.error(f"❌ Error fetching order book: {str(e)}")
+            self.logger.error(f"Error fetching order book: {str(e)}")
             return None
 
     def get_positions(self) -> Optional[Dict[str, Any]]:
@@ -270,17 +306,27 @@ class BrokerAPI:
             if not self.renew_session():
                 return None
 
+            # Ensure client is authenticated
+            if self.client is None:
+                self.logger.error("API client not initialized")
+                return None
+
             response = self.client.position()
+
+            # Ensure response is a dict before accessing keys
+            if not isinstance(response, dict):
+                self.logger.error(f"Unexpected response type for positions: expected dict, got {type(response)}")
+                return None
 
             if response.get('status') and response.get('data'):
                 return response['data']
             else:
                 error_msg = response.get('message', 'Unknown error fetching positions')
-                self.logger.error(f"❌ Failed to fetch positions: {error_msg}")
+                self.logger.error(f"Failed to fetch positions: {error_msg}")
                 return None
 
         except Exception as e:
-            self.logger.error(f"❌ Error fetching positions: {str(e)}")
+            self.logger.error(f"Error fetching positions: {str(e)}")
             return None
 
     def get_holdings(self) -> Optional[List[Dict[str, Any]]]:
@@ -293,17 +339,27 @@ class BrokerAPI:
             if not self.renew_session():
                 return None
 
+            # Ensure client is authenticated
+            if self.client is None:
+                self.logger.error("API client not initialized")
+                return None
+
             response = self.client.holding()
+
+            # Ensure response is a dict before accessing keys
+            if not isinstance(response, dict):
+                self.logger.error(f"Unexpected response type for holdings: expected dict, got {type(response)}")
+                return None
 
             if response.get('status') and response.get('data'):
                 return response['data']
             else:
                 error_msg = response.get('message', 'Unknown error fetching holdings')
-                self.logger.error(f"❌ Failed to fetch holdings: {error_msg}")
+                self.logger.error(f"Failed to fetch holdings: {error_msg}")
                 return None
 
         except Exception as e:
-            self.logger.error(f"❌ Error fetching holdings: {str(e)}")
+            self.logger.error(f"Error fetching holdings: {str(e)}")
             return None
 
     def get_market_data(self, instruments: List[Dict[str, str]], mode: str = "LTP") -> Optional[Dict[str, Any]]:
@@ -320,6 +376,11 @@ class BrokerAPI:
             if not self.renew_session():
                 return None
 
+            # Ensure client is authenticated
+            if self.client is None:
+                self.logger.error("API client not initialized")
+                return None
+
             # Map mode to feed mode
             mode_map = {"LTP": 1, "QUOTE": 2, "SNAPQUOTE": 3}
             feed_mode = mode_map.get(mode.upper(), 1)
@@ -329,15 +390,20 @@ class BrokerAPI:
                 exchangeTokens=instruments
             )
 
+            # Ensure response is a dict before accessing keys
+            if not isinstance(response, dict):
+                self.logger.error(f"Unexpected response type for market data: expected dict, got {type(response)}")
+                return None
+
             if response.get('status') and response.get('data'):
                 return response['data']
             else:
                 error_msg = response.get('message', 'Unknown error fetching market data')
-                self.logger.error(f"❌ Failed to fetch market data: {error_msg}")
+                self.logger.error(f"Failed to fetch market data: {error_msg}")
                 return None
 
         except Exception as e:
-            self.logger.error(f"❌ Error fetching market data: {str(e)}")
+            self.logger.error(f"Error fetching market data: {str(e)}")
             return None
 
     def get_historical_data(self, instrument: Dict[str, str], from_date: str, to_date: str,
@@ -357,6 +423,11 @@ class BrokerAPI:
             if not self.renew_session():
                 return None
 
+            # Ensure client is authenticated
+            if self.client is None:
+                self.logger.error("API client not initialized")
+                return None
+
             response = self.client.getCandleData({
                 "exchange": instrument["exchange"],
                 "symboltoken": instrument["token"],
@@ -365,15 +436,20 @@ class BrokerAPI:
                 "todate": to_date
             })
 
+            # Ensure response is a dict before accessing keys
+            if not isinstance(response, dict):
+                self.logger.error(f"Unexpected response type for historical data: expected dict, got {type(response)}")
+                return None
+
             if response.get('status') and response.get('data'):
                 return response['data']
             else:
                 error_msg = response.get('message', 'Unknown error fetching historical data')
-                self.logger.error(f"❌ Failed to fetch historical data: {error_msg}")
+                self.logger.error(f"Failed to fetch historical data: {error_msg}")
                 return None
 
         except Exception as e:
-            self.logger.error(f"❌ Error fetching historical data: {str(e)}")
+            self.logger.error(f"Error fetching historical data: {str(e)}")
             return None
 
     def get_instrument_details(self, exchange: str, symbol: str) -> Optional[Dict[str, Any]]:
@@ -393,7 +469,7 @@ class BrokerAPI:
             # This would typically require a symbol lookup API
             # For now, return a basic structure
             # In production, you'd implement proper symbol lookup
-            self.logger.warning("⚠️  get_instrument_details is a stub - implement proper symbol lookup")
+            self.logger.warning("get_instrument_details is a stub - implement proper symbol lookup")
             return {
                 "exchange": exchange,
                 "symbol": symbol,
@@ -402,7 +478,7 @@ class BrokerAPI:
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Error getting instrument details: {str(e)}")
+            self.logger.error(f"Error getting instrument details: {str(e)}")
             return None
 
 
